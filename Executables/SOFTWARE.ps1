@@ -4,6 +4,7 @@ param (
     [switch]$Firefox,
     [switch]$SynToolkit,
     [switch]$MacLook,
+    [switch]$MacFont,
     [switch]$SecureUxTheme
 )
 
@@ -79,6 +80,62 @@ if ($SynToolkit) {
 
     Write-Output "Installing SynToolkit..."
     Start-Process -FilePath "$tempDir\SynToolkit-Setup.exe" -WindowStyle Hidden -ArgumentList '/VERYSILENT /SUPPRESSMSGBOXES /NORESTART' -Wait
+
+    Remove-TempDirectory
+    exit
+}
+
+# macOS-style UI font
+# Not San Francisco: Apple licenses SF only for use on Apple platforms and it is
+# behind a developer login, so it cannot be pinned or shipped. Inter is the closest
+# UI-metric match with a licence that allows this (SIL OFL), pulled from upstream at
+# install time rather than vendored. Version-pinned, so the checksum is pinned too.
+$interSha256 = '9883FDD4A49D4FB66BD8177BA6625EF9A64AA45899767DDE3D36AA425756B11E'
+if ($MacFont) {
+    # Only the four styles GDI resolves inside the "Inter" family. Medium and SemiBold
+    # register as their own families, so substitution would never reach them anyway.
+    $fonts = [ordered]@{
+        'Inter-Regular.ttf'    = 'Inter Regular (TrueType)'
+        'Inter-Italic.ttf'     = 'Inter Italic (TrueType)'
+        'Inter-Bold.ttf'       = 'Inter Bold (TrueType)'
+        'Inter-BoldItalic.ttf' = 'Inter Bold Italic (TrueType)'
+    }
+
+    Write-Output "Downloading Inter..."
+    if (!(Get-RemoteFile -Url "https://github.com/rsms/inter/releases/download/v4.1/Inter-4.1.zip" `
+                         -Path "$tempDir\Inter.zip" -Name "Inter" -Sha256 $interSha256)) {
+        Remove-TempDirectory
+        exit 1
+    }
+
+    Expand-Archive -Path "$tempDir\Inter.zip" -DestinationPath "$tempDir\Inter" -Force
+    $ttfDir = "$tempDir\Inter\extras\ttf"
+
+    # Substituting Segoe UI while the replacement is missing leaves the shell falling
+    # back to a default face, so confirm the files exist before writing the mapping.
+    $missing = $fonts.Keys | Where-Object { !(Test-Path "$ttfDir\$_") }
+    if ($missing) {
+        Write-Error "Inter archive is missing: $($missing -join ', '). Not substituting Segoe UI."
+        Remove-TempDirectory
+        exit 1
+    }
+
+    Write-Output "Installing Inter..."
+    $fontsKey = 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Fonts'
+    foreach ($font in $fonts.GetEnumerator()) {
+        Copy-Item -Path "$ttfDir\$($font.Key)" -Destination "$env:SystemRoot\Fonts" -Force
+        Set-ItemProperty -Path $fontsKey -Name $font.Value -Value $font.Key
+    }
+
+    # Point the shell's UI faces at Inter. Segoe UI Variable is what Windows 11 actually
+    # draws with, so mapping plain Segoe UI alone would leave most of the shell untouched.
+    # Segoe MDL2 Assets and Segoe Fluent Icons are deliberately absent - they are icon
+    # fonts, and substituting them replaces every icon in the shell with tofu.
+    # Applies on the reboot the playbook already ends with.
+    $substitutes = 'Segoe UI', 'Segoe UI Variable Display', 'Segoe UI Variable Text', 'Segoe UI Variable Small'
+    foreach ($face in $substitutes) {
+        Set-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\FontSubstitutes' -Name $face -Value 'Inter'
+    }
 
     Remove-TempDirectory
     exit
