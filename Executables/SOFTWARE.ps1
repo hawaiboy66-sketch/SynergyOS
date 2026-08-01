@@ -3,7 +3,7 @@ param (
     [switch]$Brave,
     [switch]$Firefox,
     [switch]$SynToolkit,
-    [switch]$MacCursors
+    [switch]$MacLook
 )
 
 # ----------------------------------------------------------------------------------------------------------- #
@@ -83,13 +83,13 @@ if ($SynToolkit) {
     exit
 }
 
-# macOS cursors
+# macOS look - cursors and selection colour
 # MIT-licensed cursor set from ful1e5/apple_cursor - the bundled install.inf is not used,
 # it writes the scheme string in a non-standard order. The release URL is version-pinned,
 # so the checksum is pinned alongside it. Update both together when bumping the version.
 # Must run as the logged-in user: the scheme lives in HKCU.
 $macCursorsSha256 = '64A2C74780908954A2EC497F67919709280EBB8EBDF3E3B9336BAC071589C9DE'
-if ($MacCursors) {
+if ($MacLook) {
     $scheme = 'macOS-Regular Cursors'
     $cursorDir = "$env:SystemRoot\Cursors\$scheme"
 
@@ -144,11 +144,47 @@ if ($MacCursors) {
         Set-ItemProperty -Path 'HKCU:\Control Panel\Cursors' -Name $cursor.Key -Value "$cursorDir\$($cursor.Value)"
     }
 
-    # SPI_SETCURSORS reloads the pointers now, so the scheme applies without a reboot.
-    Add-Type -Namespace Win32 -Name Cursors -MemberDefinition '
+    Add-Type -Namespace Win32 -Name Look -MemberDefinition '
         [DllImport("user32.dll", SetLastError = true)]
-        public static extern bool SystemParametersInfo(uint action, uint param, IntPtr data, uint update);'
-    [Win32.Cursors]::SystemParametersInfo(0x0057, 0, [IntPtr]::Zero, 0) | Out-Null
+        public static extern bool SystemParametersInfo(uint action, uint param, IntPtr data, uint update);
+        [DllImport("user32.dll", SetLastError = true)]
+        public static extern bool SetSysColors(int count, int[] elements, int[] colors);'
+
+    # SPI_SETCURSORS reloads the pointers now, so the scheme applies without a reboot.
+    [Win32.Look]::SystemParametersInfo(0x0057, 0, [IntPtr]::Zero, 0) | Out-Null
+
+    # Selection highlight: Windows' blue -> macOS-style graphite grey.
+    # Two separate systems draw it. Classic apps read Control Panel\Colors, where the
+    # text colour has to move to black in the same pass or selected text goes white on
+    # white. Explorer and anything XAML read the accent palette instead.
+    Write-Output "Applying graphite selection colour..."
+    Set-ItemProperty -Path 'HKCU:\Control Panel\Colors' -Name 'Hilight' -Value '200 200 200'
+    Set-ItemProperty -Path 'HKCU:\Control Panel\Colors' -Name 'HotTrackingColor' -Value '160 160 160'
+    Set-ItemProperty -Path 'HKCU:\Control Panel\Colors' -Name 'HilightText' -Value '0 0 0'
+    # COLOR_HIGHLIGHT / COLOR_HIGHLIGHTTEXT, applied live to already-running apps.
+    [Win32.Look]::SetSysColors(2, @(13, 14), @(0xC8C8C8, 0x000000)) | Out-Null
+
+    # Light-to-dark accent ramp. Deliberately pure greys: every byte of a grey is the
+    # same, so the palette's channel order stops mattering and cannot be got wrong.
+    $accentPalette = [byte[]] @(
+        0xE8, 0xE8, 0xE8, 0x00,   # light 3
+        0xDE, 0xDE, 0xDE, 0x00,   # light 2
+        0xD4, 0xD4, 0xD4, 0x00,   # light 1
+        0xC8, 0xC8, 0xC8, 0x00,   # base - this is the one Explorer selects with
+        0xA0, 0xA0, 0xA0, 0x00,   # dark 1
+        0x80, 0x80, 0x80, 0x00,   # dark 2
+        0x60, 0x60, 0x60, 0x00,   # dark 3
+        0x00, 0x00, 0x00, 0x00
+    )
+
+    New-Item -Path 'HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\Accent' -Force | Out-Null
+    Set-ItemProperty -Path 'HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\Accent' -Name 'AccentPalette' -Value $accentPalette -Type Binary
+    Set-ItemProperty -Path 'HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\Accent' -Name 'AccentColorMenu' -Value 0xFFC8C8C8 -Type DWord
+    Set-ItemProperty -Path 'HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\Accent' -Name 'StartColorMenu' -Value 0xFFA0A0A0 -Type DWord
+    Set-ItemProperty -Path 'HKCU:\SOFTWARE\Microsoft\Windows\DWM' -Name 'AccentColor' -Value 0xFFC8C8C8 -Type DWord
+    Set-ItemProperty -Path 'HKCU:\SOFTWARE\Microsoft\Windows\DWM' -Name 'ColorizationColor' -Value 0xC4C8C8C8 -Type DWord
+    # Keeps the grey off the title bars - macOS does not tint them.
+    Set-ItemProperty -Path 'HKCU:\SOFTWARE\Microsoft\Windows\DWM' -Name 'ColorPrevalence' -Value 0 -Type DWord
 
     Remove-TempDirectory
     exit

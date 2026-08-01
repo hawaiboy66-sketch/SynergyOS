@@ -24,10 +24,10 @@ actions:
       runas: currentUserElevated
       oobe: true
 
-  # macOS cursors
-  - !status: {status: 'Applying macOS cursors', option: 'macos-look'}
+  # macOS look
+  - !status: {status: 'Applying macOS look', option: 'macos-look'}
   - !powerShell:
-      command: '.\SOFTWARE.ps1 -MacCursors'
+      command: '.\SOFTWARE.ps1 -MacLook'
       exeDir: true
       wait: true
       weight: 20
