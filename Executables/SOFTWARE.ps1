@@ -2,7 +2,8 @@ param (
     [switch]$Chrome,
     [switch]$Brave,
     [switch]$Firefox,
-    [switch]$SynToolkit
+    [switch]$SynToolkit,
+    [switch]$MacCursors
 )
 
 # ----------------------------------------------------------------------------------------------------------- #
@@ -77,6 +78,77 @@ if ($SynToolkit) {
 
     Write-Output "Installing SynToolkit..."
     Start-Process -FilePath "$tempDir\SynToolkit-Setup.exe" -WindowStyle Hidden -ArgumentList '/VERYSILENT /SUPPRESSMSGBOXES /NORESTART' -Wait
+
+    Remove-TempDirectory
+    exit
+}
+
+# macOS cursors
+# MIT-licensed cursor set from ful1e5/apple_cursor - the bundled install.inf is not used,
+# it writes the scheme string in a non-standard order. The release URL is version-pinned,
+# so the checksum is pinned alongside it. Update both together when bumping the version.
+# Must run as the logged-in user: the scheme lives in HKCU.
+$macCursorsSha256 = '64A2C74780908954A2EC497F67919709280EBB8EBDF3E3B9336BAC071589C9DE'
+if ($MacCursors) {
+    $scheme = 'macOS-Regular Cursors'
+    $cursorDir = "$env:SystemRoot\Cursors\$scheme"
+
+    # Order matters only for the Schemes value, which Windows reads positionally.
+    $cursors = [ordered]@{
+        Arrow       = 'Pointer.cur'
+        Help        = 'Help.cur'
+        AppStarting = 'Work.ani'
+        Wait        = 'Busy.ani'
+        Crosshair   = 'Cross.cur'
+        IBeam       = 'Text.cur'
+        NWPen       = 'Handwriting.cur'
+        No          = 'Unavailiable.cur'
+        SizeNS      = 'Vert.cur'
+        SizeWE      = 'Horz.cur'
+        SizeNWSE    = 'Dng1.cur'
+        SizeNESW    = 'Dng2.cur'
+        SizeAll     = 'Move.cur'
+        UpArrow     = 'Alternate.cur'
+        Hand        = 'Link.cur'
+    }
+
+    Write-Output "Downloading macOS cursors..."
+    if (!(Get-RemoteFile -Url "https://github.com/ful1e5/apple_cursor/releases/download/v2.0.1/macOS-Windows.zip" `
+                         -Path "$tempDir\macOS-cursors.zip" -Name "macOS cursors" -Sha256 $macCursorsSha256)) {
+        Remove-TempDirectory
+        exit 1
+    }
+
+    Expand-Archive -Path "$tempDir\macOS-cursors.zip" -DestinationPath "$tempDir\macOS-cursors" -Force
+    $extracted = "$tempDir\macOS-cursors\macOS-Regular-Windows"
+
+    # A silently half-applied scheme leaves the pointer as a black square, so bail out
+    # before touching the registry if the archive layout is not what we expect.
+    $missing = $cursors.Values | Where-Object { !(Test-Path "$extracted\$_") }
+    if ($missing) {
+        Write-Error "macOS cursor archive is missing: $($missing -join ', '). Not applying the scheme."
+        Remove-TempDirectory
+        exit 1
+    }
+
+    Write-Output "Installing macOS cursors..."
+    New-Item -ItemType Directory -Path $cursorDir -Force | Out-Null
+    Copy-Item -Path "$extracted\*" -Include *.cur, *.ani -Destination $cursorDir -Force
+
+    New-Item -Path 'HKCU:\Control Panel\Cursors\Schemes' -Force | Out-Null
+    Set-ItemProperty -Path 'HKCU:\Control Panel\Cursors\Schemes' -Name $scheme `
+                     -Value (($cursors.Values | ForEach-Object { "$cursorDir\$_" }) -join ',')
+
+    Set-ItemProperty -Path 'HKCU:\Control Panel\Cursors' -Name '(default)' -Value $scheme
+    foreach ($cursor in $cursors.GetEnumerator()) {
+        Set-ItemProperty -Path 'HKCU:\Control Panel\Cursors' -Name $cursor.Key -Value "$cursorDir\$($cursor.Value)"
+    }
+
+    # SPI_SETCURSORS reloads the pointers now, so the scheme applies without a reboot.
+    Add-Type -Namespace Win32 -Name Cursors -MemberDefinition '
+        [DllImport("user32.dll", SetLastError = true)]
+        public static extern bool SystemParametersInfo(uint action, uint param, IntPtr data, uint update);'
+    [Win32.Cursors]::SystemParametersInfo(0x0057, 0, [IntPtr]::Zero, 0) | Out-Null
 
     Remove-TempDirectory
     exit

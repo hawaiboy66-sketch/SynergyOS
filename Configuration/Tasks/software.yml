@@ -24,6 +24,17 @@ actions:
       runas: currentUserElevated
       oobe: true
 
+  # macOS cursors
+  - !status: {status: 'Applying macOS cursors', option: 'macos-look'}
+  - !powerShell:
+      command: '.\SOFTWARE.ps1 -MacCursors'
+      exeDir: true
+      wait: true
+      weight: 20
+      option: 'macos-look'
+      runas: currentUserElevated
+      oobe: true
+
   # Browsers
   - !status: {status: 'Installing Brave', option: 'browser-brave'}
   - !powerShell:

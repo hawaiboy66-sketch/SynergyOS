@@ -56,7 +56,14 @@ actions:
 
  - !writeStatus {status: 'Configuring Settings'}
  - !task {path: 'Tasks\registry\settings.yml'}
-  
+
+  # macOS look - overrides the dark mode / left taskbar defaults set in settings.yml,
+  # so these have to stay after that task. Cursors are handled in Tasks\software.yml.
+ - !registryValue: {path: 'HKCU\SOFTWARE\Microsoft\Windows\CurrentVersion\Themes\Personalize', value: 'AppsUseLightTheme', type: REG_DWORD, data: '1', option: 'macos-look'}
+ - !registryValue: {path: 'HKCU\SOFTWARE\Microsoft\Windows\CurrentVersion\Themes\Personalize', value: 'SystemUsesLightTheme', type: REG_DWORD, data: '1', option: 'macos-look'}
+ - !registryValue: {path: 'HKCU\SOFTWARE\Microsoft\Windows\CurrentVersion\Themes\Personalize', value: 'EnableTransparency', type: REG_DWORD, data: '1', option: 'macos-look'}
+ - !registryValue: {path: 'HKCU\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\Advanced', value: 'TaskbarAl', type: REG_DWORD, data: '1', option: 'macos-look'}
+
  - !writeStatus {status: "Disabling Services"}
  - !task {path: 'Tasks\services.yml'}
 
