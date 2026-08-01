@@ -3,7 +3,8 @@ param (
     [switch]$Brave,
     [switch]$Firefox,
     [switch]$SynToolkit,
-    [switch]$MacLook
+    [switch]$MacLook,
+    [switch]$SecureUxTheme
 )
 
 # ----------------------------------------------------------------------------------------------------------- #
@@ -78,6 +79,32 @@ if ($SynToolkit) {
 
     Write-Output "Installing SynToolkit..."
     Start-Process -FilePath "$tempDir\SynToolkit-Setup.exe" -WindowStyle Hidden -ArgumentList '/VERYSILENT /SUPPRESSMSGBOXES /NORESTART' -Wait
+
+    Remove-TempDirectory
+    exit
+}
+
+# SecureUxTheme
+# Lifts the signature check that stops Windows loading third-party .msstyles, so
+# custom visual styles can be picked from Personalization. No theme is bundled -
+# the ones worth having are not redistributable - this only unlocks the loader.
+# Version-pinned, so the checksums are pinned alongside it; update all three together.
+$secureUxThemeSha256 = @{
+    'x64'   = 'AF6AB67E0A283A0138B827B6731D5BB1F4FFC59E6D905F1C41567EB3305A9537'
+    'ARM64' = '2E5CF62249ABDB1D9F6C3B81567587BD13C2094A067B2FA753FDE9BD31A14DFB'
+}
+if ($SecureUxTheme) {
+    $uxArch = ('x64', 'ARM64')[$arm]
+
+    Write-Output "Downloading SecureUxTheme..."
+    if (!(Get-RemoteFile -Url "https://github.com/namazso/SecureUxTheme/releases/download/v4.0.0/SecureUxTheme_$uxArch.msi" `
+                         -Path "$tempDir\SecureUxTheme.msi" -Name "SecureUxTheme" -Sha256 $secureUxThemeSha256[$uxArch])) {
+        Remove-TempDirectory
+        exit 1
+    }
+
+    Write-Output "Installing SecureUxTheme..."
+    Start-Process -FilePath "msiexec.exe" -ArgumentList "/i `"$tempDir\SecureUxTheme.msi`" $msiArgs" -WindowStyle Hidden -Wait
 
     Remove-TempDirectory
     exit
